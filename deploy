@@ -1,0 +1,61 @@
+#! /bin/bash
+
+function die() {
+  echo $@
+  exit 1
+}
+
+test -z "$1" -o -z "$2" || die "usage: $0 GIT_REPOSITORY TARGET_DIRECTORY"
+
+repo=$1
+app_home=$2
+app=$(basename $app_home)
+tmp_dir=$(mktemp -d /tmp/deploy.XXXXXXXXXX)
+group_name=$(ls -l --quoting-style shell $app_home/plugins|cut -d ' ' -f 4)
+dsn=$(grep <$app_home/config.php FC_DSN_DEFAULT | sed -e 's/^.*define.*['\''"]FC_DSN_DEFAULT['\''"] *, *["'\'']\(.*\)["'\''].*$/\1/')
+dbname=$(echo $dsn |sed -ne 's/^.*dbname=\([^;]*\);.*$/\1/p')
+host=$(echo $dsn |sed -ne 's/^.*host=\([^;]*\);.*$/\1/p')
+user=$(echo $dsn |sed -ne 's/^.*user=\([^;]*\);.*$/\1/p')
+password=$(echo $dsn |sed -ne 's/^.*password=\([^;]*\);.*$/\1/p')
+
+echo -n"<?php
+echo 'hej';
+?>"|php
+
+
+# Checkout
+git clone $1 $tmp_dir/$app || die "Unable to fetch git data"
+rm -rf $tmp_dir/$app/.git
+cp $app_home/config.php $tmp_dir/$app/
+
+# Create backup
+mkdir -p /var/backups/${app} || die "unable to create backup directory"
+tar cvjf /var/backups/${app}/${app}_${date_cur}.tar.bz2 $app_home  || die "failed to backup ${app}"
+
+# Do migrations
+
+for i in $tmp_dir/$app/static/migrate/*_up.sql; do
+    
+    
+done
+
+
+# Deploy
+rm -rf $app_home || die "failed to remove old ${app}"
+
+mv $tmp_dir/$app $(dirname $app_home) || die "unable to deploy ${app}"
+
+
+
+
+
+# Set privs
+if test -d $app_home/plugins; then
+    chgrp $group_name $app_home/plugins -R || die "Unable to set ownership"
+    chmod g+wX $app_home/plugins -R || die "Unable to set permissions"
+fi
+
+# Cleanup
+rm -rf ${tmp_dir}
+
+
