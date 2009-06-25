@@ -64,6 +64,7 @@ function deploy () {
     env GIT_SSL_NO_VERIFY=true git clone https://projects.freecode.no/git/fc-framework.git $tmp_dir/$app/common || die "Unable to fetch git data"
     rm -rf $tmp_dir/$app/.git
     rm -rf $tmp_dir/$app/common/.git
+    cp $app_home/config.php $tmp_dir/$app/
     
     # Create file backup
     mkdir -p /var/backups/${app} || die "unable to create backup directory"
