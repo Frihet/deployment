@@ -1,61 +1,164 @@
 #! /bin/bash
 
 function die() {
-  echo $@
-  exit 1
+    echo $@
+    exit 1
 }
 
-test -z "$1" -o -z "$2" || die "usage: $0 GIT_REPOSITORY TARGET_DIRECTORY"
+function setup_db_env () {
 
-repo=$1
-app_home=$2
-app=$(basename $app_home)
-tmp_dir=$(mktemp -d /tmp/deploy.XXXXXXXXXX)
-group_name=$(ls -l --quoting-style shell $app_home/plugins|cut -d ' ' -f 4)
-dsn=$(grep <$app_home/config.php FC_DSN_DEFAULT | sed -e 's/^.*define.*['\''"]FC_DSN_DEFAULT['\''"] *, *["'\'']\(.*\)["'\''].*$/\1/')
-dbname=$(echo $dsn |sed -ne 's/^.*dbname=\([^;]*\);.*$/\1/p')
-host=$(echo $dsn |sed -ne 's/^.*host=\([^;]*\);.*$/\1/p')
-user=$(echo $dsn |sed -ne 's/^.*user=\([^;]*\);.*$/\1/p')
-password=$(echo $dsn |sed -ne 's/^.*password=\([^;]*\);.*$/\1/p')
+    dsn=$(grep <$app_home/config.php FC_DSN_DEFAULT | sed -e 's/^.*define.*['\''"]FC_DSN_DEFAULT['\''"] *, *["'\'']\(.*\)["'\''].*$/\1/')
+    dsn=$(echo $dsn|sed -e 's/^pgsql://')
+    dbname=$(echo $dsn |tr ';' $"\n"|sed -ne 's/^dbname=\(.*\)$/\1/p')
+    host=$(echo $dsn |tr ';' $"\n"|sed -ne 's/^host=\(.*\)$/\1/p')
+    user=$(echo $dsn |tr ';' $"\n"|sed -ne 's/^user=\(.*\)$/\1/p')
+    password=$(echo $dsn |tr ';' $"\n"|sed -ne 's/^password=\(.*\)$/\1/p')
 
-echo -n"<?php
-echo 'hej';
-?>"|php
+    # Insert password into .pgpass file
+    has_pgpass=0
+    if test -f ~/.pgpass; then
+	has_pgpass=1
+	mv ~/.pgpass $tmp_dir/
+    fi
+
+    echo "$host:*:$dbname:$user:$password" >~/.pgpass
+    chmod 0600 ~/.pgpass
+}
+
+function restore_db_env () {
+    # Restore .pgpass 
+    rm ~/.pgpass
+    if test $has_pgpass = 1; then
+	mv $tmp_dir/.pgpass ~/
+    fi
+}
+
+function deploy () {
+
+    if test -z "$1" -o -z "$2"; then
+	die "usage: $0 GIT_REPOSITORY TARGET_DIRECTORY"
+    fi
+
+    repo=$1
+    app_home=$2
+    app=$(basename $app_home)
+    tmp_dir=$(mktemp -d /tmp/deploy.XXXXXXXXXX)
+    group_name=$(ls -l --quoting-style shell $app_home/plugins|cut -d ' ' -f 4)
+    date_cur=$(date '+%Y-%m-%d')
+
+    echo "Deploying application $app"
+
+    if false; then
+    # Checkout
+	git clone $1 $tmp_dir/$app || die "Unable to fetch git data"
+	env GIT_SSL_NO_VERIFY=true git clone https://projects.freecode.no/git/fc-framework.git $tmp_dir/$app/common || die "Unable to fetch git data"
+	rm -rf $tmp_dir/$app/.git
+	rm -rf $tmp_dir/$app/common/.git
+
+	if test -d $app_home; then
+	    cp $app_home/config.php $tmp_dir/$app/
+	fi
+
+    fi
 
 
-# Checkout
-git clone $1 $tmp_dir/$app || die "Unable to fetch git data"
-rm -rf $tmp_dir/$app/.git
-cp $app_home/config.php $tmp_dir/$app/
-
-# Create backup
-mkdir -p /var/backups/${app} || die "unable to create backup directory"
-tar cvjf /var/backups/${app}/${app}_${date_cur}.tar.bz2 $app_home  || die "failed to backup ${app}"
-
-# Do migrations
-
-for i in $tmp_dir/$app/static/migrate/*_up.sql; do
-    
-    
-done
+    # Create file backup
+    mkdir -p /var/backups/${app} || die "unable to create backup directory"
+    tar cvjf /var/backups/${app}/${app}_${date_cur}.tar.bz2 $app_home  || die "failed to backup ${app}"
 
 
-# Deploy
-rm -rf $app_home || die "failed to remove old ${app}"
+    # Create db backuo
+    setup_db_env
+    pg_dump --host=$host -U $user $dbname >/var/backups/${app}/${app}_${date_cur}.db --no-owner --no-privileges --format=c 
+    pg_status=$?
+    restore_db_env
 
-mv $tmp_dir/$app $(dirname $app_home) || die "unable to deploy ${app}"
+    # Exit on dump error 
+    if test $pg_status != 0; then
+	die "Database backup error"
+    fi
+
+    die "tralala ok"
+
+    # Perform migrations
+    if test -d $app_home; then
+	cd $tmp_dir/$app/;
+	for i in static/migrate/*.sql; do
+	    if test ! -f $app_home/$i; then
+		echo "Migration $i is new!"
+		common/scripts/migrate <static/migrate/*_up.sql || die "Database migration error"
+	    fi
+	done
+
+    # Deploy
+	rm -rf $app_home || die "failed to remove old ${app}"
+
+    fi
+
+    mv $tmp_dir/$app $(dirname $app_home) || die "unable to deploy ${app}"
+
+    # Set privs
+    if test -d $app_home/plugins; then
+	chgrp $group_name $app_home/plugins -R || die "Unable to set ownership"
+	chmod g+wX $app_home/plugins -R || die "Unable to set permissions"
+    fi
+
+    # Cleanup
+    rm -rf ${tmp_dir}
+
+    echo "Done!"
+}
+
+function rollback () {
+
+    # Check usage
+    if test -z "$1" ; then
+	die "usage: $0 TARGET_DIRECTORY [VERSION]"
+    fi
+
+    # Initialize, get current date, if deploying around 00:00
+    app_home="$1"
+    app=$(basename $app_home)
+
+    # Allow user to override what date to rollback from
+    date_cur=$(date '+%Y-%m-%d')
+    if test "$2"; then
+	date_cur="$2"
+    fi
+
+    echo "Rolling back application $app to version $date_cur"
+
+    test ! -d $app_home || die "No application installed in $app_home"
+    test ! -f /var/backups/${app}/${app}_${date_cur}.tar.bz2  || die "No backup of $app exists from $date_cur"
 
 
+    # Restore database backup
+    setup_db_env
+    pg_restore --format=c -U $user -d $dbname -c </var/backups/${app}/${app}_${date_cur}.db
+    restore_db_env
 
+    # Drop any existing version. Depending on when the deploy command failed,
+    # this command may fail. This is not a bug.
+    rm -rf $app_home
 
+    # Move to root since the archives are created with absolute paths
+    cd /
 
-# Set privs
-if test -d $app_home/plugins; then
-    chgrp $group_name $app_home/plugins -R || die "Unable to set ownership"
-    chmod g+wX $app_home/plugins -R || die "Unable to set permissions"
-fi
+    # Do the actual rollback
+    tar jxpf /var/backups/${app}/${app}_${date_cur}.tar.bz2 || die "Unable to restore from backup" || die "failed to uncompress backup ${app}"
 
-# Cleanup
-rm -rf ${tmp_dir}
+    echo "Backup restored."
 
+}
 
+case "$0" in
+    deploy)
+	deploy
+	;;
+    rollback)
+	rollback
+	;;
+    *)
+	die "Unknown mode $0"
+	;;
+esac
