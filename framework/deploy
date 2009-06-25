@@ -8,6 +8,12 @@ function die() {
 function setup_db_env () {
 
     dsn=$(grep <$app_home/config.php FC_DSN_DEFAULT | sed -e 's/^.*define.*['\''"]FC_DSN_DEFAULT['\''"] *, *["'\'']\(.*\)["'\''].*$/\1/')
+    if test -z $dsn; then
+	dsn=$(grep <$app_home/config.php DB_DSN | sed -e 's/^.*define.*['\''"]FC_DSN_DEFAULT['\''"] *, *["'\'']\(.*\)["'\''].*$/\1/')
+	if test -z $dsn; then
+	    die "Could not find database DSN"
+	fi
+    fi
     dsn=$(echo $dsn|sed -e 's/^pgsql://')
     dbname=$(echo $dsn |tr ';' $"\n"|sed -ne 's/^dbname=\(.*\)$/\1/p')
     host=$(echo $dsn |tr ';' $"\n"|sed -ne 's/^host=\(.*\)$/\1/p')
@@ -24,6 +30,7 @@ function setup_db_env () {
     echo "$host:*:$dbname:$user:$password" >~/.pgpass
     chmod 0600 ~/.pgpass
 }
+
 
 function restore_db_env () {
     # Restore .pgpass 
@@ -64,6 +71,7 @@ function deploy () {
 
     # Create db backup
     setup_db_env
+
     pg_dump --host=$host -U $user $dbname >/var/backups/${app}/${app}_${date_cur}.db --no-owner --no-privileges --format=c 
     pg_status=$?
     restore_db_env
