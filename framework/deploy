@@ -43,7 +43,7 @@ function deploy () {
     app_home="$2"
     app=$(basename $app_home)
     tmp_dir=$(mktemp -d /tmp/deploy.XXXXXXXXXX)
-    group_name=$(ls -l --quoting-style shell $app_home/plugins|cut -d ' ' -f 4)
+    group_name=$(ls -l --quoting-style shell $app_home|cut -d ' ' -f 4)
     date_cur=$(date '+%Y-%m-%d')
 
     echo "Deploying application $app"
