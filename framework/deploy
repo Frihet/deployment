@@ -8,9 +8,9 @@ function die() {
 function setup_db_env () {
 
     dsn=$(grep <$app_home/config.php FC_DSN_DEFAULT | sed -e 's/^.*define.*['\''"]FC_DSN_DEFAULT['\''"] *, *["'\'']\(.*\)["'\''].*$/\1/')
-    if test -z $dsn; then
-	dsn=$(grep <$app_home/config.php DB_DSN | sed -e 's/^.*define.*['\''"]FC_DSN_DEFAULT['\''"] *, *["'\'']\(.*\)["'\''].*$/\1/')
-	if test -z $dsn; then
+    if test -z "$dsn"; then
+	dsn=$(grep <$app_home/config.php DB_DSN | sed -e 's/^.*define.*['\''"]DB_DSN['\''"] *, *["'\'']\(.*\)["'\''].*$/\1/')
+	if test -z "$dsn"; then
 	    die "Could not find database DSN"
 	fi
     fi
