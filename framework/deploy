@@ -87,7 +87,7 @@ function deploy () {
     for i in static/migrate/*.sql; do
 	if test ! -f $app_home/$i; then
 	    echo "Migration $i is new!"
-	    common/scripts/migrate <static/migrate/*_up.sql || die "Database migration error"
+	    common/scripts/migrate <$i || die "Database migration error"
 	fi
     done
     
