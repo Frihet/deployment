@@ -152,10 +152,10 @@ function rollback () {
 }
 
 case "$0" in
-    deploy)
+    *deploy)
 	deploy
 	;;
-    rollback)
+    *rollback)
 	rollback
 	;;
     *)
