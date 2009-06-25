@@ -39,8 +39,8 @@ function deploy () {
 	die "usage: $0 GIT_REPOSITORY TARGET_DIRECTORY"
     fi
 
-    repo=$1
-    app_home=$2
+    repo="$1"
+    app_home="$2"
     app=$(basename $app_home)
     tmp_dir=$(mktemp -d /tmp/deploy.XXXXXXXXXX)
     group_name=$(ls -l --quoting-style shell $app_home/plugins|cut -d ' ' -f 4)
@@ -48,26 +48,21 @@ function deploy () {
 
     echo "Deploying application $app"
 
-    if false; then
-    # Checkout
-	git clone $1 $tmp_dir/$app || die "Unable to fetch git data"
-	env GIT_SSL_NO_VERIFY=true git clone https://projects.freecode.no/git/fc-framework.git $tmp_dir/$app/common || die "Unable to fetch git data"
-	rm -rf $tmp_dir/$app/.git
-	rm -rf $tmp_dir/$app/common/.git
-
-	if test -d $app_home; then
-	    cp $app_home/config.php $tmp_dir/$app/
-	fi
-
+    if test ! -d $app_home; then
+	die "Application not installed!"
     fi
 
-
+    # Checkout
+    git clone $1 $tmp_dir/$app || die "Unable to fetch git data"
+    env GIT_SSL_NO_VERIFY=true git clone https://projects.freecode.no/git/fc-framework.git $tmp_dir/$app/common || die "Unable to fetch git data"
+    rm -rf $tmp_dir/$app/.git
+    rm -rf $tmp_dir/$app/common/.git
+    
     # Create file backup
     mkdir -p /var/backups/${app} || die "unable to create backup directory"
     tar cvjf /var/backups/${app}/${app}_${date_cur}.tar.bz2 $app_home  || die "failed to backup ${app}"
 
-
-    # Create db backuo
+    # Create db backup
     setup_db_env
     pg_dump --host=$host -U $user $dbname >/var/backups/${app}/${app}_${date_cur}.db --no-owner --no-privileges --format=c 
     pg_status=$?
@@ -78,22 +73,17 @@ function deploy () {
 	die "Database backup error"
     fi
 
-    die "tralala ok"
-
     # Perform migrations
-    if test -d $app_home; then
-	cd $tmp_dir/$app/;
-	for i in static/migrate/*.sql; do
-	    if test ! -f $app_home/$i; then
-		echo "Migration $i is new!"
-		common/scripts/migrate <static/migrate/*_up.sql || die "Database migration error"
-	    fi
-	done
-
+    cd $tmp_dir/$app/;
+    for i in static/migrate/*.sql; do
+	if test ! -f $app_home/$i; then
+	    echo "Migration $i is new!"
+	    common/scripts/migrate <static/migrate/*_up.sql || die "Database migration error"
+	fi
+    done
+    
     # Deploy
-	rm -rf $app_home || die "failed to remove old ${app}"
-
-    fi
+    rm -rf $app_home || die "failed to remove old ${app}"
 
     mv $tmp_dir/$app $(dirname $app_home) || die "unable to deploy ${app}"
 
@@ -153,10 +143,10 @@ function rollback () {
 
 case "$0" in
     *deploy)
-	deploy
+	deploy "$@"
 	;;
     *rollback)
-	rollback
+	rollback "$@"
 	;;
     *)
 	die "Unknown mode $0"
