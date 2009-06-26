@@ -13,6 +13,7 @@ function setup_db_env () {
 	if test -z "$dsn"; then
 	    die "Could not find database DSN"
 	fi
+	sed -ie 's/DB_DSN/FC_DSN_DEFAULT/' $app_home/config.php
     fi
     dsn=$(echo $dsn|sed -e 's/^pgsql://')
     dbname=$(echo $dsn |tr ';' $"\n"|sed -ne 's/^dbname=\(.*\)$/\1/p')
@@ -61,7 +62,11 @@ function deploy () {
 
     # Checkout
     git clone $1 $tmp_dir/$app || die "Unable to fetch git data"
+    cd $tmp_dir/$app
+    git pull || die "Unable to fetch git data"
     env GIT_SSL_NO_VERIFY=true git clone https://projects.freecode.no/git/fc-framework.git $tmp_dir/$app/common || die "Unable to fetch git data"
+    cd $tmp_dir/$app/common 
+    git pull || die "Unable to fetch git data"
     rm -rf $tmp_dir/$app/.git
     rm -rf $tmp_dir/$app/common/.git
     cp $app_home/config.php $tmp_dir/$app/
@@ -86,7 +91,7 @@ function deploy () {
     cd $tmp_dir/$app/;
     for i in static/migrate/*.sql; do
 	if test ! -f $app_home/$i; then
-	    echo "Migration $i is new!"
+	    echo "Run migration $i"
 	    common/scripts/migrate <$i || die "Database migration error"
 	fi
     done
